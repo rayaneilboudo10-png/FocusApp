@@ -1,0 +1,39 @@
+# Builds an unsigned FocusApp.ipa on a GitHub-hosted Mac — no Mac of your own needed.
+# Run it from the repo's Actions tab ("Build IPA" → Run workflow), then download the
+# "FocusApp-ipa" artifact from the finished run and sideload it (iloader, Sideloadly, AltStore…).
+name: Build IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_prefix:
+        description: "Unique bundle ID prefix (e.g. com.yourname.focus)"
+        required: true
+        default: "com.yourname.focus"
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: FocusApp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install tools
+        run: brew install xcodegen ldid
+
+      - name: Build unsigned IPA
+        run: bash scripts/build_unsigned_ipa.sh "${{ github.event.inputs.bundle_prefix || 'com.yourname.focus' }}"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: FocusApp-ipa
+          path: FocusApp/dist/FocusApp.ipa
+          if-no-files-found: error
