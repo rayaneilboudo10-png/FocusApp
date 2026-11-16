@@ -1,0 +1,175 @@
+# XcodeGen spec — run `xcodegen generate` in this folder to produce FocusApp.xcodeproj
+name: FocusApp
+
+options:
+  bundleIdPrefix: com.focusapp
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    # Override on the command line to get unique IDs for your (free) Apple ID:
+    #   xcodebuild ... BUNDLE_ID_PREFIX=com.yourname.focus
+    BUNDLE_ID_PREFIX: com.focusapp
+    APP_GROUP_ID: group.$(BUNDLE_ID_PREFIX).focus
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+
+schemes:
+  FocusApp:
+    build:
+      targets:
+        FocusApp: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+targets:
+  # ───────────────────────────── Main app ─────────────────────────────
+  FocusApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: FocusApp
+      - path: Shared/Core
+      - path: Shared/ScreenTime
+      - path: Shared/LiveActivity
+    info:
+      path: FocusApp/Info.plist
+      properties:
+        CFBundleDisplayName: Focus
+        LSRequiresIPhoneOS: true
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiresFullScreen: true
+        UIUserInterfaceStyle: Dark
+        NSSupportsLiveActivities: true
+        ITSAppUsesNonExemptEncryption: false
+        FocusAppGroupIdentifier: $(APP_GROUP_ID)
+    entitlements:
+      path: FocusApp/FocusApp.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - $(APP_GROUP_ID)
+    settings:
+      base:
+        PRODUCT_NAME: FocusApp
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).FocusApp
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    dependencies:
+      - target: FocusWidgets
+      - target: FocusShieldConfig
+      - target: FocusShieldAction
+      - target: FocusActivityMonitor
+
+  # ─────────────────── Live Activity (Lock Screen timer) ───────────────────
+  FocusWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: FocusWidgets
+      - path: Shared/Core
+      - path: Shared/LiveActivity
+    info:
+      path: FocusWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Focus Live Activity
+        FocusAppGroupIdentifier: $(APP_GROUP_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).FocusApp.Widgets
+
+  # ─────────────────── Shield (block screen) appearance ───────────────────
+  FocusShieldConfig:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: FocusShieldConfig
+      - path: Shared/Core
+    info:
+      path: FocusShieldConfig/Info.plist
+      properties:
+        CFBundleDisplayName: Focus Shield
+        FocusAppGroupIdentifier: $(APP_GROUP_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.ManagedSettingsUI.shield-configuration-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FocusShieldConfigExtension
+    entitlements:
+      path: FocusShieldConfig/FocusShieldConfig.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - $(APP_GROUP_ID)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).FocusApp.ShieldConfig
+
+  # ─────────────────── Shield button handling ───────────────────
+  FocusShieldAction:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: FocusShieldAction
+      - path: Shared/Core
+      - path: Shared/ScreenTime
+    info:
+      path: FocusShieldAction/Info.plist
+      properties:
+        CFBundleDisplayName: Focus Shield Action
+        FocusAppGroupIdentifier: $(APP_GROUP_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.ManagedSettings.shield-action-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FocusShieldActionExtension
+    entitlements:
+      path: FocusShieldAction/FocusShieldAction.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - $(APP_GROUP_ID)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).FocusApp.ShieldAction
+
+  # ─────────────────── Schedules + daily limits ───────────────────
+  FocusActivityMonitor:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: FocusActivityMonitor
+      - path: Shared/Core
+      - path: Shared/ScreenTime
+    info:
+      path: FocusActivityMonitor/Info.plist
+      properties:
+        CFBundleDisplayName: Focus Activity Monitor
+        FocusAppGroupIdentifier: $(APP_GROUP_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FocusActivityMonitorExtension
+    entitlements:
+      path: FocusActivityMonitor/FocusActivityMonitor.entitlements
+      properties:
+        com.apple.developer.family-controls: true
+        com.apple.security.application-groups:
+          - $(APP_GROUP_ID)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).FocusApp.ActivityMonitor
