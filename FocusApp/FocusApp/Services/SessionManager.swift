@@ -2,21 +2,39 @@ import FamilyControls
 import Foundation
 import Observation
 
+/// What the "Focus Breached" screen reports after you come back.
+struct BreachEvent: Identifiable, Equatable {
+    let id = UUID()
+    let awayFor: TimeInterval
+    let addedMinutes: Int
+    let lostStreak: Int
+    let streakReset: Bool
+}
+
 /// Owns the active focus session: start, countdown, Hard Mode enforcement,
-/// persistence across force-quits, notifications and the Live Activity.
+/// escape detection and penalties, persistence across force-quits,
+/// notifications and the Live Activity.
 @Observable @MainActor
 final class SessionManager {
     private(set) var active: FocusSession?
     private(set) var justCompleted: FocusSession?
+    private(set) var breachEvent: BreachEvent?
+    private(set) var streak: StreakState
+    private(set) var counter: DailyCounter
     var isLockPresented = false
 
     @ObservationIgnored private let store = SharedStore.shared
     @ObservationIgnored private let screenTime: ScreenTimeService
     @ObservationIgnored private let liveActivity = LiveActivityService()
+    @ObservationIgnored private let escapeDetector = EscapeDetector()
     @ObservationIgnored private var ticker: Timer?
 
     init(screenTime: ScreenTimeService) {
         self.screenTime = screenTime
+        streak = SharedStore.shared.streak
+        counter = SharedStore.shared.dailyCounter
+        // A breach recorded before a force-quit is judged on the next launch.
+        processPendingBreach()
         restore()
     }
 
@@ -25,6 +43,14 @@ final class SessionManager {
         guard let active else { return false }
         return !active.hardMode || active.isExpired()
     }
+
+    /// While true, the Strict Focus Lock cover must stay on screen.
+    var isLockMandatory: Bool {
+        guard let active else { return false }
+        return active.strictLock && !active.isExpired()
+    }
+
+    var currentStreak: Int { streak.value() }
 
     // MARK: Lifecycle
 
@@ -70,17 +96,80 @@ final class SessionManager {
     }
 
     func acknowledgeCompletion() { justCompleted = nil }
+    func acknowledgeBreach() { breachEvent = nil }
 
     // MARK: Scene phase
 
     func didEnterBackground() {
-        guard let active, active.strictLock, !active.isExpired() else { return }
-        NotificationService.scheduleLeaveNudges(for: active, quote: store.currentQuote().text)
+        guard let active, !active.isExpired() else { return }
+
+        if active.hardMode {
+            // Assume the worst immediately: record the breach and start the alarms.
+            store.pendingBreach = BreachRecord(sessionID: active.id, leftAt: Date())
+            NotificationService.scheduleBreachAlarms(for: active)
+
+            // Then forgive it if it turns out the phone was simply locked.
+            escapeDetector.classifyBackgrounding { [weak self] wasDeviceLock in
+                guard wasDeviceLock, let self else { return }
+                self.store.pendingBreach = nil
+                NotificationService.cancelBreachAlarms()
+            }
+        } else if active.strictLock {
+            NotificationService.scheduleLeaveNudges(for: active, quote: store.currentQuote().text)
+        }
     }
 
     func didBecomeActive() {
         NotificationService.cancelLeaveNudges()
+        NotificationService.cancelBreachAlarms()
+        processPendingBreach()
         syncFromStore()
+        counter = store.dailyCounter
+    }
+
+    // MARK: Breach penalty
+
+    private func processPendingBreach(now: Date = Date()) {
+        guard let breach = store.pendingBreach else { return }
+        store.pendingBreach = nil
+
+        let away = now.timeIntervalSince(breach.leftAt)
+        guard away >= 2 else { return }
+
+        let penalty = store.breachPenalty
+        var addedMinutes = 0
+        if penalty.addsTime,
+           var session = store.session,
+           session.id == breach.sessionID,
+           !session.isExpired(at: now) {
+            session.endDate = session.endDate.addingTimeInterval(TimeInterval(BreachPenalty.minutes * 60))
+            store.session = session
+            addedMinutes = BreachPenalty.minutes
+            if active?.id == session.id { applyExtension(to: session) }
+        }
+
+        var lostStreak = 0
+        if penalty.resetsStreak {
+            lostStreak = streak.value(at: now)
+            streak.reset()
+            store.streak = streak
+        }
+
+        store.recordBreach()
+        counter = store.dailyCounter
+        breachEvent = BreachEvent(awayFor: away,
+                                  addedMinutes: addedMinutes,
+                                  lostStreak: lostStreak,
+                                  streakReset: penalty.resetsStreak)
+    }
+
+    private func applyExtension(to session: FocusSession) {
+        active = session
+        NotificationService.scheduleCompletion(for: session)
+        liveActivity.start(session, quote: store.currentQuote().text, theme: store.theme)
+        if session.usesScreenTime, let selection = ShieldController.decode(store.focusSelectionData) {
+            screenTime.startSession(session, selection: selection)
+        }
     }
 
     // MARK: Private
@@ -95,6 +184,7 @@ final class SessionManager {
             finish(active, completed: false, announce: false)
         } else {
             tick()
+            if isLockMandatory { isLockPresented = true }
         }
     }
 
@@ -105,6 +195,7 @@ final class SessionManager {
         } else {
             active = saved
             isLockPresented = saved.strictLock
+            NotificationService.scheduleCompletion(for: saved)
             liveActivity.resume(saved, quote: store.currentQuote().text, theme: store.theme)
             startTicker()
         }
@@ -121,14 +212,20 @@ final class SessionManager {
         if session.usesScreenTime { screenTime.endSession() }
         if let key = session.occurrenceKey { store.markDismissed(key) }
         store.session = nil
+        store.pendingBreach = nil
 
         active = nil
         isLockPresented = false
         if !completed { NotificationService.cancelCompletion() }
         NotificationService.cancelLeaveNudges()
+        NotificationService.cancelBreachAlarms()
         liveActivity.end()
 
-        if completed && announce { justCompleted = session }
+        if completed {
+            streak.recordCompletion()
+            store.streak = streak
+            if announce { justCompleted = session }
+        }
     }
 
     private func startTicker() {

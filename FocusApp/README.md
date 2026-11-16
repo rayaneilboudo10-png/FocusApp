@@ -38,6 +38,18 @@ scripts/                    IPA build scripts
 | Hard Mode | No stop/cancel/unblock buttons in the UI, the shield's secondary button is removed, and app removal is denied | No stop button; the lock persists across force-quits |
 | Live Activity | Lock Screen countdown | Same |
 
+### Sideload enforcement (no Screen Time needed)
+
+- **Escape detection.** Leaving the app during a Hard Mode session counts as a breach (`SessionManager.didEnterBackground`). Locking the phone does not: `EscapeDetector` keeps the app alive for 1.5 s and checks SpringBoard's `lockcomplete` signal and `protectedDataWillBecomeUnavailable`.
+- **Breach alarms.** Notifications reading "🚨 GET BACK TO WORK!" fire every 5 s for 3 minutes, every 30 s for the next 5, then every 2 minutes, and are cancelled the moment you return. iOS allows at most 64 pending notifications per app and won't repeat a trigger more often than every 60 s, which is why the alarms slow down after the first few minutes.
+- **Focus Breached screen.** When you return, a full-screen penalty screen shows how long you were away. Depending on the chosen penalty it adds 5 minutes to the timer, resets your streak, or does both. Its dismiss button unlocks after 5 seconds. A breach still counts if you force-quit the app and reopen it.
+- **Streak.** The streak counts consecutive days with at least one completed session and is shown at the top of the Focus screen.
+- **Guided Access guide.** A step-by-step sheet explains how to pin the screen at the system level. It shows when Guided Access is active (`UIAccessibility.isGuidedAccessEnabled`).
+- **App redirects.** The **Is Focus Locked** and **Open Focus Lock** Shortcuts actions (`FocusApp/Intents`) let a "When Instagram is opened" automation send you back to Focus. Each redirect is counted.
+- **Locked-down Strict Focus Lock.** The lock screen can't be dismissed while the timer runs (guarded binding in `RootView`). It hides the status bar and home indicator, and system edge gestures need a second swipe to work.
+
+Known limit: if you lock the phone, then unlock it and open another app straight from the Home Screen, the app is already suspended and can't detect it. Guided Access or app redirects cover that case.
+
 **How Hard Mode stays persistent.** The session's end timestamp is saved to the App Group defaults and also mirrored to `UserDefaults.standard`. When the app relaunches it restores the lock until that timestamp. A Hard Mode schedule cannot be edited, disabled or deleted while it is active.
 
 **Known limits.** iOS always lets you revoke the app's Screen Time access in Settings, and changing the device clock affects the timer. No third-party app can block either of these.

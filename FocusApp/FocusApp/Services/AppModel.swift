@@ -30,6 +30,7 @@ final class AppModel {
     var focusMinutes: Int { didSet { store.focusMinutes = focusMinutes } }
     var hardModeEnabled: Bool { didSet { store.hardModeEnabled = hardModeEnabled } }
     var strictLockEnabled: Bool { didSet { store.strictLockEnabled = strictLockEnabled } }
+    var breachPenalty: BreachPenalty { didSet { store.breachPenalty = breachPenalty } }
 
     var focusSelection: FamilyActivitySelection {
         didSet { store.focusSelectionData = ShieldController.encode(focusSelection) }
@@ -64,6 +65,7 @@ final class AppModel {
         focusMinutes = shared.focusMinutes
         hardModeEnabled = shared.hardModeEnabled
         strictLockEnabled = shared.strictLockEnabled
+        breachPenalty = shared.breachPenalty
         focusSelection = ShieldController.decode(shared.focusSelectionData) ?? FamilyActivitySelection()
         dailyLimit = shared.dailyLimit
 

@@ -60,6 +60,52 @@ enum NotificationService {
         center.removeDeliveredNotifications(withIdentifiers: ids)
     }
 
+    // MARK: Hard Mode breach alarms
+
+    private static let breachPrefix = "focus.breach."
+    private static let breachSlots = 56
+
+    /// Aggressive alarms after leaving during Hard Mode, cancelled the moment you return.
+    ///
+    /// iOS keeps at most 64 pending notifications per app, and repeating triggers must be
+    /// at least 60 s apart, so: every 5 s for the first 3 minutes, every 30 s for the next
+    /// 5 minutes, then every 2 minutes (≈ 28 minutes of coverage, never past the session end).
+    static func scheduleBreachAlarms(for session: FocusSession) {
+        cancelBreachAlarms()
+
+        var offsets: [TimeInterval] = []
+        var t: TimeInterval = 1
+        while offsets.count < breachSlots {
+            offsets.append(t)
+            t += t < 180 ? 5 : (t < 480 ? 30 : 120)
+        }
+
+        let now = Date()
+        for (index, offset) in offsets.enumerated() {
+            let fireDate = now.addingTimeInterval(offset)
+            guard fireDate < session.endDate else { break }
+
+            let minutesLeft = max(1, Int((session.endDate.timeIntervalSince(fireDate) / 60).rounded(.up)))
+            let content = UNMutableNotificationContent()
+            content.title = "🚨 GET BACK TO WORK!"
+            content.body = "Focus session is locked. \(minutesLeft) min left — come back now."
+            content.sound = .default
+            content.threadIdentifier = "focus.breach"
+            content.relevanceScore = 1
+            // Delivered as .active unless the Time Sensitive capability is granted.
+            content.interruptionLevel = .timeSensitive
+
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: offset, repeats: false)
+            center.add(UNNotificationRequest(identifier: breachPrefix + "\(index)", content: content, trigger: trigger))
+        }
+    }
+
+    static func cancelBreachAlarms() {
+        let ids = (0..<breachSlots).map { breachPrefix + "\($0)" }
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
+
     // MARK: Schedules
 
     static func syncScheduleReminders(_ schedules: [FocusSchedule], screenTimeActive: Bool) {

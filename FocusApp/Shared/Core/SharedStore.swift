@@ -19,6 +19,7 @@ final class SharedStore {
         case schedules, session, theme, customQuotes, quoteMode, selectedQuoteID
         case focusSelection, dailyLimit, strictLock, hardModeEnabled, focusMinutes
         case dismissedOccurrences
+        case pendingBreach, breachPenalty, streak, dailyCounter
     }
 
     init() {
@@ -154,6 +155,52 @@ final class SharedStore {
 
     static func occurrenceKey(_ schedule: FocusSchedule, window: ClosedRange<Date>) -> String {
         "\(schedule.id.uuidString)@\(Int(window.lowerBound.timeIntervalSince1970))"
+    }
+
+    // MARK: Breaches, streaks, redirects
+
+    var pendingBreach: BreachRecord? {
+        get { decode(BreachRecord.self, .pendingBreach) }
+        set { encode(newValue, .pendingBreach) }
+    }
+
+    var breachPenalty: BreachPenalty {
+        get { defaults.string(forKey: Key.breachPenalty.rawValue).flatMap(BreachPenalty.init(rawValue:)) ?? .addTime }
+        set { defaults.set(newValue.rawValue, forKey: Key.breachPenalty.rawValue) }
+    }
+
+    var streak: StreakState {
+        get { decode(StreakState.self, .streak) ?? StreakState() }
+        set { encode(newValue, .streak) }
+    }
+
+    var dailyCounter: DailyCounter {
+        get { (decode(DailyCounter.self, .dailyCounter) ?? DailyCounter()).normalized() }
+        set { encode(newValue, .dailyCounter) }
+    }
+
+    func recordRedirect() {
+        var counter = dailyCounter
+        counter.redirects += 1
+        dailyCounter = counter
+    }
+
+    func recordBreach() {
+        var counter = dailyCounter
+        counter.breaches += 1
+        dailyCounter = counter
+    }
+
+    /// True while a session runs, or a schedule is active and wasn't ended early.
+    /// Backs the "Is Focus Locked" Shortcuts action.
+    var isFocusLocked: Bool {
+        let now = Date()
+        if let session, !session.isExpired(at: now) { return true }
+        let dismissed = Set(dismissedOccurrences)
+        return schedules.contains { schedule in
+            guard let window = schedule.activeWindow(at: now) else { return false }
+            return !dismissed.contains(Self.occurrenceKey(schedule, window: window))
+        }
     }
 
     // MARK: Hard Mode

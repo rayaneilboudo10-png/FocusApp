@@ -171,6 +171,76 @@ struct DailyLimitConfig: Codable, Equatable {
     var selectionData: Data? = nil
 }
 
+// MARK: - Breaches (leaving the app during Hard Mode)
+
+enum BreachPenalty: String, Codable, CaseIterable, Identifiable {
+    case addTime, resetStreak, both
+
+    static let minutes = 5
+
+    var id: String { rawValue }
+    var addsTime: Bool { self != .resetStreak }
+    var resetsStreak: Bool { self != .addTime }
+
+    var label: String {
+        switch self {
+        case .addTime: return "+\(Self.minutes) min"
+        case .resetStreak: return "Reset streak"
+        case .both: return "Both"
+        }
+    }
+}
+
+/// Written the instant the app is backgrounded during Hard Mode; judged on return.
+struct BreachRecord: Codable, Equatable {
+    var sessionID: UUID
+    var leftAt: Date
+}
+
+struct StreakState: Codable, Equatable {
+    var current: Int = 0
+    var best: Int = 0
+    var lastDay: Date? = nil
+
+    mutating func recordCompletion(on date: Date = Date(), calendar: Calendar = .current) {
+        let today = calendar.startOfDay(for: date)
+        if let lastDay {
+            if calendar.isDate(lastDay, inSameDayAs: today) { return }
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+            current = calendar.isDate(lastDay, inSameDayAs: yesterday) ? current + 1 : 1
+        } else {
+            current = 1
+        }
+        lastDay = today
+        best = max(best, current)
+    }
+
+    /// A streak survives until a whole day passes without a completed session.
+    func value(at date: Date = Date(), calendar: Calendar = .current) -> Int {
+        guard let lastDay else { return 0 }
+        let gap = calendar.dateComponents([.day], from: lastDay, to: calendar.startOfDay(for: date)).day ?? 0
+        return gap <= 1 ? current : 0
+    }
+
+    mutating func reset() {
+        current = 0
+        lastDay = nil
+    }
+}
+
+/// Today's redirect / breach tallies (resets at midnight).
+struct DailyCounter: Codable, Equatable {
+    var day: Date = Calendar.current.startOfDay(for: Date())
+    var redirects: Int = 0
+    var breaches: Int = 0
+
+    func normalized(at date: Date = Date()) -> DailyCounter {
+        Calendar.current.isDate(day, inSameDayAs: date)
+            ? self
+            : DailyCounter(day: Calendar.current.startOfDay(for: date))
+    }
+}
+
 // MARK: - Quotes
 
 enum QuoteMode: String, Codable, CaseIterable {

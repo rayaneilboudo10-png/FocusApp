@@ -6,13 +6,17 @@ struct FocusView: View {
     @State private var showAppPicker = false
     @State private var showLimitPicker = false
     @State private var confirmHardMode = false
+    @State private var showGuidedAccess = false
+    @State private var showShortcutsGuide = false
 
     private let presets = [15, 25, 45, 60, 90, 120]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.l) {
-                ScreenHeader("Focus", subtitle: model.sessions.active == nil ? "Pick a length. Begin." : "In session")
+                ScreenHeader("Focus", subtitle: model.sessions.active == nil ? "Pick a length. Begin." : "In session") {
+                    StreakBadge(days: model.sessions.currentStreak)
+                }
 
                 if let done = model.sessions.justCompleted {
                     CompletionBanner(session: done) { model.sessions.acknowledgeCompletion() }
@@ -24,6 +28,7 @@ struct FocusView: View {
                     setupPanel
                 }
 
+                enforcementSection
                 blockingSection
                 dailyLimitSection
             }
@@ -79,6 +84,50 @@ struct FocusView: View {
             .buttonStyle(PrimaryButtonStyle())
             .sensoryFeedback(.impact(weight: .medium), trigger: model.sessions.active?.id)
         }
+    }
+
+    // MARK: Lock it down (sideload-friendly enforcement)
+
+    private var enforcementSection: some View {
+        @Bindable var model = model
+        let hardSessionRunning = model.sessions.active?.hardMode == true
+
+        return VStack(alignment: .leading, spacing: DS.Space.s) {
+            SectionLabel("Lock it down")
+            Card {
+                GuidedAccessRow { showGuidedAccess = true }
+                RowDivider()
+                NavRow(title: "App redirects",
+                       value: "Shortcuts",
+                       systemImage: "arrow.uturn.backward",
+                       action: { showShortcutsGuide = true })
+                RowDivider()
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 14) {
+                        IconBadge(systemImage: "exclamationmark.octagon")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Breach penalty")
+                                .font(DS.Typography.body.weight(.medium))
+                                .foregroundStyle(DS.Palette.text)
+                            Text("If you leave the app during Hard Mode")
+                                .font(DS.Typography.footnote)
+                                .foregroundStyle(DS.Palette.secondary)
+                        }
+                    }
+                    ChipPicker(options: BreachPenalty.allCases,
+                               selection: $model.breachPenalty,
+                               label: { $0.label },
+                               disabled: hardSessionRunning)
+                }
+                .padding(16)
+            }
+            Text("Free sideloaded builds can't block other apps. Guided Access pins your screen to Focus at the system level; app redirects bounce you back if you open something else.")
+                .font(DS.Typography.footnote)
+                .foregroundStyle(DS.Palette.tertiary)
+                .padding(.horizontal, 4)
+        }
+        .sheet(isPresented: $showGuidedAccess) { GuidedAccessGuideView() }
+        .sheet(isPresented: $showShortcutsGuide) { ShortcutsGuideView() }
     }
 
     // MARK: Blocked apps
@@ -146,6 +195,25 @@ struct FocusView: View {
             }
         }
         .familyActivityPicker(isPresented: $showLimitPicker, selection: $model.dailyLimitSelection)
+    }
+}
+
+// MARK: - Streak badge
+
+private struct StreakBadge: View {
+    let days: Int
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: days > 0 ? "flame.fill" : "flame")
+            Text("\(days)").monospacedDigit()
+        }
+        .font(.system(size: 15, weight: .semibold))
+        .foregroundStyle(days > 0 ? DS.Palette.text : DS.Palette.tertiary)
+        .padding(.horizontal, 14)
+        .frame(height: 40)
+        .background(DS.Palette.raised, in: Capsule())
+        .accessibilityLabel("\(days)-day streak")
     }
 }
 
